@@ -88,6 +88,9 @@ func Validate(image Image) error {
 		if _, ok := relation.Column(definition.Column); !ok {
 			return fmt.Errorf("invalid index column")
 		}
+		if err := catalog.ValidateCondition(relation, definition.Where); err != nil {
+			return err
+		}
 	}
 	for name, rows := range image.Store.Tables {
 		r, ok := image.Catalog.Relations[name]
@@ -121,6 +124,9 @@ func Validate(image Image) error {
 		for _, chain := range image.Store.Tables[definition.Relation] {
 			version, exists := versions.Visible(chain, image.Sequence)
 			if !exists {
+				continue
+			}
+			if !catalog.HoldsAll(version.Row, definition.Where) {
 				continue
 			}
 			value := version.Row[definition.Column]

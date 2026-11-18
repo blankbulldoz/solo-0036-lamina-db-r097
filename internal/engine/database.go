@@ -107,7 +107,7 @@ func (d *DB) publish(r journal.Record) error {
 		return fault("unavailable", "durable record cannot be applied: %s", err)
 	}
 	if len(r.Writes) > 0 {
-		d.indexes.Apply(d.catalog, r.Writes)
+		d.indexes.Apply(d.catalog, r.Writes, r.Sequence)
 	}
 	return nil
 }

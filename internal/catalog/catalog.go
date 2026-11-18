@@ -6,11 +6,12 @@ import (
 )
 
 type Index struct {
-	Name     string `json:"name"`
-	Relation string `json:"relation"`
-	Column   string `json:"column"`
-	Unique   bool   `json:"unique"`
-	Created  uint64 `json:"created"`
+	Name     string      `json:"name"`
+	Relation string      `json:"relation"`
+	Column   string      `json:"column"`
+	Unique   bool        `json:"unique"`
+	Where    []Predicate `json:"where,omitempty"`
+	Created  uint64      `json:"created"`
 }
 type Catalog struct {
 	Relations map[string]Relation `json:"relations"`
@@ -38,6 +39,9 @@ func (c *Catalog) CheckIndex(i Index) error {
 	}
 	if _, ok := r.Column(i.Column); !ok {
 		return fmt.Errorf("unknown index column")
+	}
+	if err := ValidateCondition(r, i.Where); err != nil {
+		return err
 	}
 	return nil
 }

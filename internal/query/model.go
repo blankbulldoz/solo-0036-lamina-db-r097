@@ -1,12 +1,13 @@
 package query
 
-import "lamina/internal/datum"
+import (
+	"lamina/internal/catalog"
+	"lamina/internal/datum"
+)
 
-type Predicate struct {
-	Column string      `json:"column"`
-	Op     string      `json:"op"`
-	Value  datum.Value `json:"value"`
-}
+// Predicate is the shared typed comparison used by requests, index
+// conditions and residual checks.
+type Predicate = catalog.Predicate
 type Ordering struct {
 	Column string `json:"column"`
 	Desc   bool   `json:"desc"`
@@ -27,11 +28,14 @@ type Request struct {
 	ForceScan   bool        `json:"force_scan,omitempty"`
 }
 type Plan struct {
-	Access     string `json:"access"`
-	Index      string `json:"index,omitempty"`
-	Candidates int    `json:"candidates"`
-	Snapshot   uint64 `json:"snapshot"`
-	Residuals  int    `json:"residuals"`
+	Access     string              `json:"access"`
+	Index      string              `json:"index,omitempty"`
+	Candidates int                 `json:"candidates"`
+	Snapshot   uint64              `json:"snapshot"`
+	Residuals  int                 `json:"residuals"`
+	Reason     string              `json:"reason,omitempty"`
+	Condition  []catalog.Predicate `json:"condition,omitempty"`
+	Considered []Consideration     `json:"considered,omitempty"`
 }
 type Result struct {
 	Rows      []datum.Row `json:"rows"`

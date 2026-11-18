@@ -31,9 +31,7 @@ func Bind(r catalog.Relation, q Request) error {
 		if !ok {
 			return fmt.Errorf("unknown predicate %s", p.Column)
 		}
-		switch p.Op {
-		case "=", "!=", "<", ">", "<=", ">=", "is_null", "not_null":
-		default:
+		if !catalog.ValidOp(p.Op) {
 			return fmt.Errorf("unsupported comparison %s", p.Op)
 		}
 		if p.Op != "is_null" && p.Op != "not_null" && !p.Value.Null() && p.Value.Kind != c.Type {
@@ -61,45 +59,5 @@ func Bind(r catalog.Relation, q Request) error {
 	return nil
 }
 func Matches(row datum.Row, predicates []Predicate) bool {
-	for _, p := range predicates {
-		v := row[p.Column]
-		if p.Op == "is_null" {
-			if !v.Null() {
-				return false
-			}
-			continue
-		}
-		if p.Op == "not_null" {
-			if v.Null() {
-				return false
-			}
-			continue
-		}
-		if v.Null() || p.Value.Null() {
-			return false
-		}
-		n, err := v.Compare(p.Value)
-		if err != nil {
-			return false
-		}
-		pass := false
-		switch p.Op {
-		case "=":
-			pass = n == 0
-		case "!=":
-			pass = n != 0
-		case "<":
-			pass = n < 0
-		case ">":
-			pass = n > 0
-		case "<=":
-			pass = n <= 0
-		case ">=":
-			pass = n >= 0
-		}
-		if !pass {
-			return false
-		}
-	}
-	return true
+	return catalog.HoldsAll(row, predicates)
 }

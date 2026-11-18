@@ -38,9 +38,10 @@ class Session:
  def commit(self,tx,status=200):return self.call('POST',f'/transactions/{tx}/commit',status=status)
  def query(self,**kwargs):return self.call('POST','/query',{'relation':'spectra',**kwargs})
  def stats(self):return self.call('GET','/stats')
+def ids_absent(result,n):return all(r['sample']!=n for r in result['rows'])
 def require(condition,message):
  if not condition:raise RuntimeError(message)
-def tuple_(n,band=None,amplitude=None):return {'sample':n,'band':band or f'b{n}','amplitude':n*10 if amplitude is None else amplitude,'valid':True}
+def tuple_(n,band=None,amplitude=None,valid=True):return {'sample':n,'band':band or f'b{n}','amplitude':n*10 if amplitude is None else amplitude,'valid':valid}
 def seed(s):
  schema={'name':'spectra','primary':'sample','columns':[{'name':'sample','type':'int'},{'name':'band','type':'text'},{'name':'amplitude','type':'int','nullable':True},{'name':'valid','type':'bool'}]}
  s.call('POST','/relations',schema,201)
@@ -76,7 +77,11 @@ def walkthrough(name,binary):
     a=s.begin();b=s.begin();s.put(a,tuple_(8,band='shared'));s.put(b,tuple_(9,band='shared'));s.commit(a);s.commit(b,409)
     swap=s.begin();s.put(swap,tuple_(1,band='b2'));s.put(swap,tuple_(2,band='b1'));s.commit(swap)
     duplicate=s.begin();s.put(duplicate,tuple_(10,band='b3'));s.commit(duplicate,409)
-    observations=s.call('GET','/catalog')
+    partial={'name':'by_valid_amplitude','relation':'spectra','column':'amplitude','unique':True,'where':[{'column':'valid','op':'=','value':True}]}
+    s.call('POST','/indexes',partial,201)
+    dup=s.begin();s.put(dup,tuple_(11,amplitude=40,valid=False));s.commit(dup)
+    eligible=s.begin();s.put(eligible,tuple_(12,amplitude=40));s.commit(eligible,409)
+    observations={'catalog':s.call('GET','/catalog'),'partial_unique':'ineligible duplicate does not collide; eligible duplicate rejected'}
    elif name=='query-plan':
     s.call('POST','/indexes',{'name':'by_amplitude','relation':'spectra','column':'amplitude'},201)
     at=s.stats()['sequence'];tx=s.begin();s.put(tx,tuple_(1,amplitude=999));s.commit(tx)
@@ -84,7 +89,20 @@ def walkthrough(name,binary):
     fast=s.query(**q);slow=s.query(force_scan=True,**q)
     require(fast['rows']==slow['rows'] and fast['plan']['access']=='index','index/scan mismatch')
     historical=s.query(at=at,**q);require(len(historical['rows'])==2,'historical index lost prior value')
-    observations={'indexed':fast,'historical':historical}
+    s.call('POST','/indexes',{'name':'by_valid_amplitude','relation':'spectra','column':'amplitude','where':[{'column':'valid','op':'=','value':True}]},201)
+    indexed=s.stats()['sequence']
+    proofless=s.query(**q)
+    require(proofless['plan'].get('index')!='by_valid_amplitude' and proofless['rows']==fast['rows'],'partial index used without proof')
+    flip=s.begin();s.put(flip,tuple_(2,amplitude=20,valid=False));s.commit(flip);flip_at=s.stats()['sequence']
+    proved={'where':[{'column':'valid','op':'=','value':True},{'column':'amplitude','op':'<=','value':20}],'columns':['sample']}
+    chosen=s.query(**proved)
+    require(chosen['plan']['access']=='index' and chosen['plan']['index']=='by_valid_amplitude','partial index not chosen')
+    require(chosen['rows']==s.query(force_scan=True,**proved)['rows'],'partial index lost rows')
+    require(ids_absent(chosen,2),'row that left the condition was still indexed')
+    before=s.query(at=indexed,**proved)
+    require(before['plan']['access']=='index' and any(r['sample']==2 for r in before['rows']),'old snapshot lost historical candidate')
+    require(len(s.query(**q)['rows'])==1,'ineligible row must remain visible to scans')
+    observations={'indexed':fast,'historical':historical,'partial_rejected':proofless['plan'],'partial_chosen':chosen['plan'],'current':s.query(**proved),'before_flip':before}
    elif name=='sql-execute':
     sql=s.call('POST','/sql',{'sql':'SELECT sample, amplitude FROM spectra WHERE amplitude >= 30 AND valid = true ORDER BY amplitude DESC LIMIT 2;'})
     structured=s.query(columns=['sample','amplitude'],where=[{'column':'amplitude','op':'>=','value':30},{'column':'valid','op':'=','value':True}],order=[{'column':'amplitude','desc':True}],limit=2)

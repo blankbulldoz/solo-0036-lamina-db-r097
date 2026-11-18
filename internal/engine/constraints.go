@@ -22,6 +22,9 @@ func (d *DB) unique(table string, writes map[string]map[string]staged) error {
 func checkUnique(rows map[string]datum.Row, i catalog.Index) error {
 	values := map[string]string{}
 	for key, row := range rows {
+		if !catalog.HoldsAll(row, i.Where) {
+			continue
+		}
 		v := row[i.Column]
 		if v.Null() {
 			continue
